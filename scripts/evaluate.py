@@ -150,7 +150,7 @@ def compare_kpis(args, res_rbc, res_rl):
 
         # Bar plot
         ax.set_title(kpi)
-        ax.boxplot(kpis_rl, orientation='vertical', label='RL')
+        ax.boxplot(kpis_rl, label='RL')
         ax.axhline(y=kpis_rbc[kpi], linestyle='--', color='red', label='RBC')
         ax.set_ylim(
             ymin=min(kpis_rbc[kpi], kpis_rl.min())-0.02,

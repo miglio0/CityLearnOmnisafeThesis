@@ -12,10 +12,12 @@ from citylearn.agents.rbc import OptimizedRBC as RBCAgent
 import os
 import json
 import torch
-import warnings; warnings.filterwarnings("ignore", category=UserWarning)
+import warnings
+
+warnings.filterwarnings("ignore", category=UserWarning)
 from datetime import datetime
 from utils import *
-from config import TrainConfig
+from config import EvalConfig, TrainConfig
 
 
 CUSTOM_REWARD_FN = {
@@ -31,15 +33,6 @@ CUSTOM_REWARD_FN = {
                     'w3': 0.6,
                     'w4': 0.0,
                 }
-        }
-    },
-    'battery_reward': {
-        'type': 'citylearn.reward_function.BatteryAwareComfortReward',
-        'attributes': {
-            'penalty': 3.0,
-            'band': 2.0,
-            'lower_exponent': 2.0,
-            'higher_exponent': 2.0
         }
     }
 }
