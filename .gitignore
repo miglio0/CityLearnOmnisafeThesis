@@ -21,3 +21,5 @@
 
 # Distribution files
 **/*.egg-info/*
+
+**/experiments/*

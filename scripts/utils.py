@@ -1,47 +1,16 @@
 # CityLearn utils
+from citylearn.citylearn import CityLearnEnv
 from citylearn.data import DataSet
 from citylearn.wrappers import StableBaselines3Wrapper
-from citylearn.citylearn import CityLearnEnv
 
 # Logging
 import wandb
 from stable_baselines3.common.callbacks import BaseCallback
 
 # Utils
-import argparse
+import json
 from collections import deque
 from typing import Any, List, Tuple, Dict
-import pandas as pd
-import matplotlib.pyplot as plt
-import seaborn as sns
-import math
-import os
-
-
-class Config:
-    def __init__(self):
-        self.parser = argparse.ArgumentParser(description="Configurations for Constrained RL on CityLearn")
-        self._add_args()
-        self.args = self.parser.parse_args()
-
-    def _add_args(self):
-        # Seed
-        self.parser.add_argument('--seed', type=int, default=1, help="Experiment seed")
-
-        # CityLearn config
-        self.parser.add_argument('--data', type=str, default='citylearn_challenge_2023_phase_1', help="CityLearn dataset")
-        self.parser.add_argument('--custom', action='store_true', help="Flag for CityLearn dataset customization")
-
-        # RL args
-        self.parser.add_argument('--wrapper', type=str, choices=['omnisafe', 'sb3'], default='omnisafe', help="CityLearn wrapper to use")
-        self.parser.add_argument('--algo', type=str, default='PPO', help="RL algorithm to use")
-        self.parser.add_argument('--episodes', type=int, default=1000, help="Number of episodes to rollout")
-
-        # Logging
-        self.parser.add_argument('--wandb', action='store_true', help="Flag for logging on wandb")
-        self.parser.add_argument('--entity', type=str, default='luca0', help="Wandb entity")
-        self.parser.add_argument('--project', type=str, default='citylearn_omnisafe', help="Wandb project name")
-        self.parser.add_argument('--tag', type=str, default='comfort_reward', help="Wandb tag")
 
 
 class CityLearnKPIWrapper(StableBaselines3Wrapper):
@@ -70,8 +39,11 @@ class CityLearnKPIWrapper(StableBaselines3Wrapper):
 
 
 class CityLearnWandbCallback(BaseCallback):
-    def __init__(self, verbose: int=0, window_len: int=100):
+    def __init__(self, verbose: int=0, online: bool=False, window_len: int=100):
         super().__init__(verbose)
+
+        # Whether to log data online
+        self.online = online
         
         # Episodic info
         self.ep_count = 0
@@ -104,18 +76,19 @@ class CityLearnWandbCallback(BaseCallback):
             self.net_consumption_h.append(info['net_consumption'])
                 
             # Log episodic return and length to wandb
-            wandb.log(
-                {
-                    'TotalEnvSteps': self.num_timesteps,
-                    'Metrics/Discomfort': self._log_fn(self.discomfort_h),
-                    'Metrics/CO2_Emissions': self._log_fn(self.carbon_emissions_h),
-                    'Metrics/Electricity_Consumption': self._log_fn(self.net_consumption_h),
-                    'Metrics/EpRet': self._log_fn(self.ep_rewards),
-                    'Metrics/EpLen': self._log_fn(self.ep_lengths),
-                    'Metrics/EpCost': 0.0
-                },
-                step=self.ep_count
-            )
+            if self.online:
+                wandb.log(
+                    {
+                        'TotalEnvSteps': self.num_timesteps,
+                        'Metrics/Discomfort': self._log_fn(self.discomfort_h),
+                        'Metrics/CO2_Emissions': self._log_fn(self.carbon_emissions_h),
+                        'Metrics/Electricity_Consumption': self._log_fn(self.net_consumption_h),
+                        'Metrics/EpRet': self._log_fn(self.ep_rewards),
+                        'Metrics/EpLen': self._log_fn(self.ep_lengths),
+                        'Metrics/EpCost': 0.0
+                    },
+                    step=self.ep_count
+                )
 
             print(
                 f"{'*'*30}\nEPISODE {self.ep_count}"                          +
@@ -129,178 +102,170 @@ class CityLearnWandbCallback(BaseCallback):
         return True
     
 
-def _select_items(schema: Dict[str, Any], key: str, available_items: List[str]=None) -> Tuple[dict, List[str]]:
-    assert key in ['buildings', 'observations', 'actions'], f'Unknown schema key {key}.'
+class CityLearnSchema:
+    def __init__(self, schema: Dict[str, Any] | None=None):
+        self._schema: Dict[str, Any] | None = schema
+
+    @property
+    def schema(self) -> Dict[str, Any]:
+        return self._schema
     
-    # Init
-    flag_key = 'include' if key == 'buildings' else 'active'
-    pool = available_items if available_items is not None else list(schema[key].keys())
+    @schema.setter
+    def schema(self, new_schema: Dict[str, Any]):
+        self._schema = new_schema
 
-    print(f"Available {key}:")
-    for idx, item in enumerate(pool):
-        print(f"- {idx+1}. {item}")
+    def load(self, dataset: str, custom: bool=False):
+        assert self._schema is None, 'Schema has already been loaded.'
 
-    # Item selection
-    user_input = input(f"\nSelect {item} by entering their numbers separated by commas (e.g., 1,3,5): ")
-    selected_indices = [int(i.strip()) - 1 for i in user_input.split(',') if i.strip().isdigit() and 0 < int(i.strip()) <= len(pool)]
-    selected_items = [pool[i] for i in selected_indices]
+        # Get the schema of the dataset
+        self._schema = DataSet().get_schema(dataset)
 
-    print(f"Selected items: {selected_items}\n\n")
+        if custom:
+            print("="*40)
+            print("CityLearnOmnisafe - Dataset Customization")
+            print("="*40)
+            print(f"Dataset: {dataset}")
 
-    # Filter CityLearn items based on user selection
-    for item in schema[key].keys():
-        schema[key][item][flag_key] = (item in selected_items) 
+            # User's building selection
+            _ = self._select_items(key='buildings')
+            # User's observation selection
+            selected_obs = self._select_items(key='observations')
+            # User's action selection
+            selected_act = self._select_items(key='actions')
 
-    return schema, selected_items
+            # Sanity check
+            self._check(selected_obs, selected_act)
+        else:
+            # Include Building_1 by default
+            self.set_active(key='buildings', items=['Building_1'])
+
+        # Custom cooling device: Daikin FTXM35R-RXM35R
+        # page 44 https://planetaklimata.com.ua/instr/Daikin/Daikin_Perfera_RXM-R_Data_Sheet_Eng.pdf
+        # for _, b in self._schema['buildings'].items():
+        #     b['cooling_device'] = {
+        #         'type': 'citylearn.energy_model.AirConditioner',
+        #         'autosize': False,
+        #         'attributes': {
+        #             'nominal_power': 3.40,
+        #             'nominal_efficiency': 4.04,
+        #             'rated_outdoor_temperature': 35.0,
+        #             'efficiency_derating': 0.12
+        #         }
+        #     }
+
+    def save(self, dir: str, prefix: str='base'):
+        with open(f'{dir}/{prefix}_schema.json', 'w') as f:
+            json.dump(self._schema, f, indent=4)
+
+    def set(self, key: str, value: Dict[str, Any]):
+        self._schema[key] = value
+
+    def set_active(self, key: str, items: List[str]):
+        assert self._schema is not None, 'Schema has not been loaded, yet.'
+        assert key in ['buildings', 'observations', 'actions'], f'Unknown schema key {key}.'
+
+        # Filter CityLearn items
+        flag_key = 'include' if key == 'buildings' else 'active'
+        for it in self._schema[key].keys():
+            self._schema[key][it][flag_key] = (it in items)
+
+    def train_test_split(self, frac: float, mode: str):
+        assert mode in ['train', 'test'], f'Unknown mode {mode}. Must be either `train` or `test`.'
+        assert 0 < frac <= 1, f'Invalid fraction {frac}. Must be in (0,1).'
+
+        # Copy base schema
+        train_schema, test_schema = self._schema.copy(), self._schema.copy()
+
+        # Total simulation days
+        time_steps = self._schema['simulation_end_time_step'] + 1
+        total_days = time_steps // 24
+
+        # Train/test split index
+        train_days = int(total_days * frac)
+        split_idx = train_days * 24
+
+        # Modify train/test schemas
+        train_schema['simulation_end_time_step'] = split_idx - 1
+        if frac < 1:
+            test_schema['simulation_start_time_step'] = split_idx
+
+        return train_schema, test_schema
+
+    def _select_items(self, key: str):
+        assert key in ['buildings', 'observations', 'actions'], f'Unknown schema key {key}.'
     
+        # Available items
+        if key == 'buildings':
+            pool = list(self._schema[key].keys())
+        else:
+            pool = [item for item in self._schema[key].keys() if self._schema[key][item]['active']]
 
-def select_env_config(dataset: str) -> Dict[str, Any]:
+        print(f"Available {key}:")
+        for idx, item in enumerate(pool):
+            print(f"- {idx+1}. {item}")
 
-    print("="*40)
-    print("CityLearnOmnisafe")
-    print("="*40)
-    print(f"Dataset: {dataset}")
+        # Item selection
+        user_input = input(f"\nSelect {item} by entering their numbers separated by commas (e.g., 1,3,5): ")
+        selected_indices = [int(i.strip()) - 1 for i in user_input.split(',') if i.strip().isdigit() and 0 < int(i.strip()) <= len(pool)]
+        selected_items = [pool[i] for i in selected_indices]
 
-    # Filter schema's available observations/actions 
-    schema = DataSet().get_schema(dataset)
-    available_obs = [obs for obs in schema['observations'].keys() if schema['observations'][obs]['active']]
-    available_act = [act for act in schema['actions'].keys() if schema['actions'][act]['active']]
+        print(f"Selected items: {selected_items}\n\n")
 
-    # User's building selection
-    schema, _ = _select_items(schema=schema, key='buildings')
-    # User's observation selection
-    schema, selected_obs = _select_items(schema=schema, key='observations', available_items=available_obs)
-    # User's action selection
-    schema, selected_act = _select_items(schema=schema, key='actions', available_items=available_act)
+        # Modify schema according to user's selection
+        self.set_active(key=key, items=selected_items)
 
-    for action in selected_act:
-        device = action.split('_')[0]
-        
-        if not any(device in obs for obs in selected_obs):
-            print(f"[WARN] You selected to control '{action}', but no observation related to '{device}' is selected. Please select again.")
+        return selected_items
+    
+    def _check(self, observations: List[str], actions: List[str]):
+        print('Checking observations...')
+        if 'indoor_dry_bulb_temperature' in observations:
+            if 'indoor_dry_bulb_temperature_cooling_set_point':
+                # Remove "redundant" observations
+                observations.remove('indoor_dry_bulb_temperature_cooling_set_point')
 
-    return schema
+                # Activate temperature delta
+                observations.append('indoor_dry_bulb_temperature_cooling_delta')
+                self.set_active(key='observations', items=observations)
+                print(
+                    '[CHECK] Both `indoor_dry_bulb_temperature` and `indoor_dry_bulb_temperature_cooling_set_point` are active.' + 
+                    ' `indoor_dry_bulb_temperature_cooling_delta` has been activated.'
+                )
+
+            if 'indoor_dry_bulb_temperature_heating_set_point' in observations:
+                # Remove "reduntant" observations
+                observations.remove('indoor_dry_bulb_temperature_heating_set_point')
+
+                # Activate temperature delta
+                observations.append('indoor_dry_bulb_temperature_heating_delta')
+                self.set_active(key='observations', items=observations)
+                print(
+                    '[CHECK] Both `indoor_dry_bulb_temperature` and `indoor_dry_bulb_temperature_heating_set_point` are active.' + 
+                    ' `indoor_dry_bulb_temperature_heating_delta` has been activated.'
+                )
 
 
-def default_env_config(dataset: int) -> Dict[str, Any]:
-    # Get schema from CityLearn dataset
-    schema = DataSet().get_schema(dataset)
-
-    # Our default configuration considers only `Building_1`
-    for build in schema['buildings'].keys():
-        schema['buildings'][build]['include'] = (build == 'Building_1')
-
-    return schema
-
-def get_kpis(env: CityLearnEnv) -> pd.DataFrame:
-    """Returns evaluation KPIs.
-
-    Electricity cost and carbon emissions KPIs are provided
-    at the building-level and average district-level. Average daily peak,
-    ramping and (1 - load factor) KPIs are provided at the district level.
-
-    Parameters
-    ----------
-    env: CityLearnEnv
-        CityLearn environment instance.
-
-    Returns
-    -------
-    kpis: pd.DataFrame
-        KPI table.
-    """
-
+def get_kpis(env: CityLearnEnv) -> Dict[str, float]:
     kpis = env.unwrapped.evaluate()
 
-    # names of KPIs to retrieve from evaluate function
+    # KPIs to retrieve
     kpi_names = {
-        'cost_total': 'Cost',
-        'carbon_emissions_total': 'Emissions',
-        'daily_peak_average': 'Avg. daily peak',
-        'ramping_average': 'Ramping',
-        'monthly_one_minus_load_factor_average': '1 - load factor',
-        'discomfort_proportion': 'Discomfort'
+        'cost_total': 'Cost ($/kWh)',
+        'carbon_emissions_total': 'Emissions (kgC02e/kWh)',
+        'daily_peak_average': 'Avg. daily peak (kWh)',
+        'ramping_average': 'Ramping (kWh)',
+        'daily_one_minus_load_factor_average': '1 - load factor',
+        'discomfort_proportion': 'Discomfort (%)'
     }
+
+    # Filter KPIs
     kpis = kpis[
+        (kpis['level'] == 'district') &
         (kpis['cost_function'].isin(kpi_names))
     ].dropna()
     kpis['cost_function'] = kpis['cost_function'].map(lambda x: kpi_names[x])
 
-    # round up the values to 2 decimal places for readability
-    kpis['value'] = kpis['value'].round(2)
+    kpis_dict = {}
+    for _, kpi in kpis.iterrows():
+        kpis_dict[kpi['cost_function']] = kpi['value']
 
-    # rename the column that defines the KPIs
-    kpis = kpis.rename(columns={'cost_function': 'kpi'})
-
-    return kpis
-
-def plot_district_kpis(envs: dict[str, CityLearnEnv], base_path: str) -> None:
-    """Plots electricity consumption, cost, carbon emissions,
-    average daily peak, ramping and (1 - load factor) at the
-    district-level for different control agents in a bar chart.
-
-    Parameters
-    ----------
-    envs: dict[str, CityLearnEnv]
-        Mapping of user-defined control agent names to environments
-        the agents have been used to control.
-
-    base_path: str
-            Path to save the figure.
-    Returns
-    -------
-    None
-    """
-
-    kpis_list = []
-
-    for k, v in envs.items():
-        kpis = get_kpis(v)
-        kpis = kpis[kpis['level']=='district'].copy()
-        kpis['env_id'] = k
-        kpis_list.append(kpis)
-
-    kpis = pd.concat(kpis_list, ignore_index=True, sort=False)
-    kpi_names= kpis['kpi'].unique()
-    column_count_limit = 3
-    row_count = math.ceil(len(kpi_names)/column_count_limit)
-    column_count = min(column_count_limit, len(kpi_names))
-
-    # Calculate figure size - adjusted for better proportions
-    figsize = (6*column_count, 3.5*row_count)
-    
-    fig, _ = plt.subplots(
-        row_count, column_count, figsize=figsize
-    )
-
-    # Add figure title
-    fig.suptitle('District KPIs', fontsize=16, fontweight='bold')
-
-    for i, (ax, (k, k_data)) in enumerate(zip(fig.axes, kpis.groupby('kpi'))):
-        sns.barplot(x='value', y='name', data=k_data, hue='env_id', ax=ax)
-
-        ax.set_xlabel(None)
-        ax.set_ylabel(None)
-        ax.set_yticklabels([])  # Remove y-axis tick labels
-        ax.set_title(k)
-
-        for j in range(len(ax.containers)):
-            ax.bar_label(ax.containers[j], fmt='%.2f')
-
-        # Add dashed vertical line at x=1
-        ax.axvline(x=1, color='gray', linestyle='--', linewidth=1.5, label='No Control')
-
-        if i == len(kpi_names) - 1:
-            ax.legend(
-                loc='upper left', bbox_to_anchor=(1.3, 1.0), framealpha=0.0
-            )
-        else:
-            ax.legend().set_visible(False)
-
-        for s in ['right','top']:
-            ax.spines[s].set_visible(False)
-
-    plt.tight_layout()
-    os.makedirs(base_path, exist_ok=True)
-    plt.savefig(f'{base_path}/district_kpis.png', bbox_inches='tight')
-    plt.close()
+    return kpis_dict
