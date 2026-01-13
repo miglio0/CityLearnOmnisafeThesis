@@ -100,6 +100,93 @@ To customize algorithm-specific training parameters:
 
 ---
 
+## Customizing the Reward Function
+
+By default, if no reward is specified, the environment uses the **default CityLearn reward defined in the schema** (`ComfortReward`).
+
+### Selecting a Reward Function via Command Line
+
+To use a different reward function, pass the `--tag` argument when running `train.py`.
+
+Example:
+
+```bash
+python scripts/train.py \
+  --algo PPO \
+  --episodes 1000 \
+  --tag solar_comfort_reward
+```
+
+The value passed to `--tag` must correspond to a key in the `CUSTOM_REWARD_FN` dictionary defined in `train.py`.
+
+---
+
+### Available Reward Functions
+
+All selectable reward functions are registered in the `CUSTOM_REWARD_FN` dictionary inside `train.py`.
+Each entry maps a tag name to a CityLearn reward function class.
+
+Example:
+
+```python
+CUSTOM_REWARD_FN = {
+    'solar_comfort_reward': {
+        'type': 'citylearn.reward_function.SolarPenaltyAndComfortReward'
+    }
+}
+```
+
+---
+
+### Adding a New Reward Function
+
+To add a new reward function, follow these steps:
+
+1. **Select an existing reward function**
+
+   Choose a reward function that already exists in:
+
+   ```
+   CityLearn/citylearn/reward_function.py
+   ```
+
+   For example, to use `SolarPenaltyAndComfortReward`, ensure that the class is defined in this file.
+
+2. **Register the reward in `train.py`**
+
+   Add a new entry to the `CUSTOM_REWARD_FN` dictionary that points to the selected reward function:
+
+   ```python
+   CUSTOM_REWARD_FN['solar_comfort_reward'] = {
+       'type': 'citylearn.reward_function.SolarPenaltyAndComfortReward'
+   }
+   ```
+
+3. **Select the reward during training**
+
+   Specify the corresponding tag using the `--tag` argument:
+
+   ```bash
+   python scripts/train.py \
+     --algo PPO \
+     --episodes 1000 \
+     --tag solar_comfort_reward
+   ```
+
+---
+
+### Defining a Custom Reward Function (Optional)
+
+If the reward function you want to use is **not already available** in `CityLearn/citylearn/reward_function.py`, you can define a new custom reward class there.
+
+When implementing a new reward function, please follow the official CityLearn guidelines to ensure compatibility:
+
+👉 [https://www.citylearn.net/overview/reward_function.html#how-to-define-a-custom-reward-function](https://www.citylearn.net/overview/reward_function.html#how-to-define-a-custom-reward-function)
+
+After defining the new reward class, register it in `CUSTOM_REWARD_FN` and select it via the `--tag` argument as described above.
+
+---
+
 ### Evaluation
 
 To evaluate a trained agent, use the `evaluate.py` script.
