@@ -145,6 +145,7 @@ def main_omnisafe(conf: TrainConfig, schema_obj: CityLearnSchema):
         'env_cfgs': { 
             'schema': schema_obj.schema,
             'central_agent': True,
+            'cost_fn': 'placeholder_cost_fn'
         }
     }
 

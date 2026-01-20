@@ -1,4 +1,5 @@
 # CityLearn utils
+import torch
 from citylearn.citylearn import CityLearnEnv
 from citylearn.data import DataSet
 from citylearn.wrappers import StableBaselines3Wrapper
@@ -269,3 +270,7 @@ def get_kpis(env: CityLearnEnv) -> Dict[str, float]:
         kpis_dict[kpi['cost_function']] = kpi['value']
 
     return kpis_dict
+
+def placeholder_cost_fn(obs: torch.Tensor) -> torch.Tensor:
+    # Placeholder cost function that returns zero cost
+    return torch.tensors([0.0], dtype=torch.float32)

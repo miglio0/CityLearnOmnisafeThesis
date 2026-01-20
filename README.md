@@ -212,6 +212,86 @@ python scripts/evaluate.py \
   --test
 ```
 
+## Customizing the Cost Function (Constrained RL)
+
+OmniSafe supports **constrained reinforcement learning (CMDP)** by optimizing a reward while enforcing one or more cost constraints.
+In this wrapper, **cost functions are defined at the CityLearn level** and passed to OmniSafe through the environment configuration.
+
+This section explains how to add and use a **custom cost function** for constrained RL training.
+
+---
+
+### Overview
+
+A cost function:
+
+* Takes the **current observation** as input
+* Returns a **scalar cost** (or batch of costs)
+* Is evaluated at every timestep
+* Is used by OmniSafe algorithms such as `CPO`, `PCPO`, `LagrangianPPO`, etc.
+
+---
+
+## Step 1: Define a Custom Cost Function
+
+All cost functions must be defined in:
+
+```
+CityLearn/citylearn/cmdp_cost_functions.py
+```
+
+A cost function must:
+
+* Accept a `torch.Tensor` observation
+* Return a `torch.Tensor` of shape `(1,)` or `(batch_size,)`
+
+### Example: Placeholder Cost Function
+
+```python
+import torch
+
+def placeholder_cost_fn(obs: torch.Tensor) -> torch.Tensor:
+    """
+    Placeholder cost function that always returns zero cost.
+
+    Parameters
+    ----------
+    obs : torch.Tensor
+        Observation tensor from the environment.
+
+    Returns
+    -------
+    torch.Tensor
+        Cost value(s).
+    """
+    return torch.tensor([0.0], dtype=torch.float32)
+```
+
+---
+
+## Step 2: Register the Cost Function in `train.py`
+
+To enable the cost function during training, you must specify it in the **environment configuration** passed to OmniSafe.
+
+Inside `scripts/train.py`, modify the `env_cfgs` dictionary to include a `cost_fn` key.
+
+### Example Configuration
+
+```python
+'env_cfgs': { 
+    'schema': schema_obj.schema,
+    'central_agent': True,
+    'cost_fn': 'placeholder_cost_fn'
+}
+```
+
+⚠️ **Important notes:**
+
+* The value of `cost_fn` **must be a string**
+* The string must exactly match the function name defined in
+  `citylearn/cmdp_cost_functions.py`
+* The wrapper dynamically resolves the function at runtime
+
 ## Our modifications
 
 ### a. Omnisafe

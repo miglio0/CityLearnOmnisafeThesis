@@ -5,6 +5,7 @@ from omnisafe.typing import DEVICE_CPU
 # CityLearn
 from citylearn.citylearn import CityLearnEnv
 from citylearn.wrappers import NormalizedObservationWrapper
+from citylearn.cmdp_cost_functions import *
 
 # Utils
 import torch
@@ -34,6 +35,9 @@ class CityLearnOmnisafe(CMDP):
         self._env = NormalizedObservationWrapper(CityLearnEnv(**kwargs))
         self._observation_space = self._env.observation_space[0]
         self._action_space = self._env.action_space[0]
+        self._cost_function_str = kwargs.get('cost_fn', None)
+        if self._cost_function_str is not None:
+            self._cost_function = globals()[self._cost_function_str]
 
         # Device
         self._device = device
@@ -86,10 +90,10 @@ class CityLearnOmnisafe(CMDP):
         terminated = torch.as_tensor(terminated, dtype=torch.bool, device=self._device)
         truncated = torch.as_tensor(truncated, dtype=torch.bool, device=self._device)        
 
-        # Placeholder
-        cost = self.cost_function(reward, obs)
-        # cost = torch.zeros_like(reward)
-
+        if self._cost_function is not None:
+            cost = self._cost_function(obs)
+        else:
+            cost = torch.zeros_like(reward)
         return obs, reward, cost, terminated, truncated, info
     
     def set_seed(self, seed: int) -> None:
@@ -100,7 +104,3 @@ class CityLearnOmnisafe(CMDP):
 
     def close(self) -> None:
         self._env.close()
-    
-    def cost_function(self, reward: torch.Tensor, obs: torch.Tensor) -> torch.Tensor:
-        # Placeholder
-        return torch.zeros_like(reward)
