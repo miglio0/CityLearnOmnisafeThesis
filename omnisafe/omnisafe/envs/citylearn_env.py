@@ -87,7 +87,8 @@ class CityLearnOmnisafe(CMDP):
         truncated = torch.as_tensor(truncated, dtype=torch.bool, device=self._device)        
 
         # Placeholder
-        cost = torch.zeros_like(reward)
+        cost = self.cost_function(reward, obs)
+        # cost = torch.zeros_like(reward)
 
         return obs, reward, cost, terminated, truncated, info
     
@@ -99,3 +100,7 @@ class CityLearnOmnisafe(CMDP):
 
     def close(self) -> None:
         self._env.close()
+    
+    def cost_function(self, reward: torch.Tensor, obs: torch.Tensor) -> torch.Tensor:
+        # Placeholder
+        return torch.zeros_like(reward)
