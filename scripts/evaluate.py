@@ -658,6 +658,8 @@ if __name__ == '__main__':
 
     # Evaluate Rule-based Control agent
     res_rbc = evaluate(args, 'rbc', schema_obj.schema)
+    with open(os.path.join(f'{args.exp_dir}', f"rbc_res.pkl"), 'wb') as f:
+        pickle.dump(res_rbc, f)
 
     # Evaluate all the seeds of the RL experiment
     res_rl = defaultdict(dict)
