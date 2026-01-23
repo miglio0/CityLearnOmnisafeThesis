@@ -693,3 +693,11 @@ if __name__ == '__main__':
     )
     scores_rbc_df = pd.DataFrame.from_dict(scores_rbc, orient='index')
     scores_rbc_df.to_csv(os.path.join(f'{args.exp_dir}', f"rbc_scores.csv"))
+
+    kpis_rbc = res_rbc['kpis']
+    kpis_rbc = pd.DataFrame.from_dict(kpis_rbc, orient='index')
+    kpis_rbc.to_csv(os.path.join(f'{args.exp_dir}', f"rbc_kpis.csv"))
+    
+    kpis_rl = res_rl['seed1']['kpis']
+    kpis_rl = pd.DataFrame.from_dict(kpis_rl, orient='index')
+    kpis_rl.to_csv(os.path.join(f'{args.exp_dir}', f"rl_kpis.csv"))
