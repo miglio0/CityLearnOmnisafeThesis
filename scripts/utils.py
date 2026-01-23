@@ -259,18 +259,17 @@ def get_kpis(env: CityLearnEnv) -> Dict[str, float]:
     }
 
     # Filter KPIs
+    all_kpis =  kpis.copy()
+
     kpis = kpis[
         (kpis['level'] == 'district') &
         (kpis['cost_function'].isin(kpi_names))
     ].dropna()
+    
     kpis['cost_function'] = kpis['cost_function'].map(lambda x: kpi_names[x])
 
     kpis_dict = {}
     for _, kpi in kpis.iterrows():
         kpis_dict[kpi['cost_function']] = kpi['value']
 
-    return kpis_dict
-
-def placeholder_cost_fn(obs: torch.Tensor) -> torch.Tensor:
-    # Placeholder cost function that returns zero cost
-    return torch.tensors([0.0], dtype=torch.float32)
+    return kpis_dict, all_kpis
